@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<REQUIREMENT-SET PROJECT="Aegis-X">
+    <ITEM ID="REQ-NAV-01">
+        <TEXT>Missilet skal opprettholde en minimumshastighet på 1800 km/t under cruise-fasen.</TEXT>
+        <MIN_SPEED>1800</MIN_SPEED>
+        <PRIORITY>Critical</PRIORITY>
+    </ITEM>
+</REQUIREMENT-SET>

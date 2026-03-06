@@ -1,8 +1,18 @@
-﻿<?xml version="1.0" encoding="UTF-8"?>
+﻿$xmlContent = @"
+<?xml version="1.0" encoding="UTF-8"?>
 <REQUIREMENT-SET PROJECT="Aegis-X">
     <ITEM ID="REQ-NAV-01">
-        <TEXT>Missilet skal opprettholde en minimumshastighet på 1800 km/t under cruise-fasen.</TEXT>
+        <TEXT>Minimumshastighet: 1800 km/t.</TEXT>
         <MIN_SPEED>1800</MIN_SPEED>
-        <PRIORITY>Critical</PRIORITY>
+    </ITEM>
+    <ITEM ID="REQ-NAV-02">
+        <TEXT>Maksimal flyhøyde: 25000 meter.</TEXT>
+        <MAX_ALTITUDE>25000</MAX_ALTITUDE>
+    </ITEM>
+    <ITEM ID="REQ-SAFE-01">
+        <TEXT>Maksimal sensortemperatur: 85 grader Celsius.</TEXT>
+        <MAX_TEMP>85</MAX_TEMP>
     </ITEM>
 </REQUIREMENT-SET>
+"@
+$xmlContent | Out-File -FilePath "data/system_reqs.xml" -Encoding utf8

@@ -1,0 +1,8 @@
+# Kompilert kode
+bin/
+
+# Autogenerert dokumentasjon
+docs/api/
+
+# IDE-spesifikke filer
+.vscode/

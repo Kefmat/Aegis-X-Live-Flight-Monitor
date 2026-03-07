@@ -4,29 +4,39 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import model.TelemetryData;
 
+/**
+ * Håndterer nettverkskommunikasjon via UDP.
+ * Lytter etter innkommende telemetripakker og validerer dem mot systemkrav.
+ */
 public class TelemetryReceiver {
     private int port;
     private boolean running;
+    private ConfigLoader config;
 
-    public TelemetryReceiver(int port) {
+    /**
+     * Oppretter en ny mottaker for telemetri.
+     * * @param port Nettverksporten det skal lyttes på.
+     * @param config Konfigurasjonsobjektet som inneholder grenseverdier.
+     */
+    public TelemetryReceiver(int port, ConfigLoader config) {
         this.port = port;
+        this.config = config;
     }
 
+    /**
+     * Starter mottak av UDP-pakker. Denne metoden blokkerer tråden den kjører i.
+     */
     public void start() {
         this.running = true;
-        
         try (DatagramSocket socket = new DatagramSocket(port)) {
             System.out.println("[NETWORK] Lytter på UDP port " + port + "...");
-            
             byte[] buffer = new byte[1024];
 
             while (running) {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-                socket.receive(packet); // Blokkerer til data mottas
+                socket.receive(packet);
 
                 String received = new String(packet.getData(), 0, packet.getLength());
-                
-                // Bruker Parseren vi lagde tidligere
                 TelemetryData data = Parser.parseRawString(received);
                 
                 if (data != null) {
@@ -38,18 +48,24 @@ public class TelemetryReceiver {
         }
     }
 
+    /**
+     * Intern prosessering av mottatte data og sjekk mot grenseverdier.
+     * * @param data Telemetridataene som skal valideres.
+     */
     private void processData(TelemetryData data) {
         System.out.println("[LIVE] " + data.toString());
         
-        // Sanntids sjekk mot grenseverdier
-        if (data.speed < 1800) {
-            System.out.println(">>> ALERT: Under minimumshastighet (1800 km/t)!");
+        if (data.speed < config.minSpeed) {
+            System.out.println(">>> ALERT: Hastighet under krav (" + config.minSpeed + " km/t)!");
         }
-        if (data.temperature > 85) {
-            System.out.println(">>> ALERT: Kritisk temperatur overskredet!");
+        if (data.temperature > config.maxTemp) {
+            System.out.println(">>> ALERT: Temperatur over krav (" + config.maxTemp + " C)!");
         }
     }
 
+    /**
+     * Stopper nettverksmottaket.
+     */
     public void stop() {
         this.running = false;
     }

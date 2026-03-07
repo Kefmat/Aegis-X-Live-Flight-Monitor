@@ -26,7 +26,7 @@ jobs:
 
     - name: Generate Javadoc
       run: |
-        javadoc -d docs/api -sourcepath src -subpackages engine:model Main.java
+        javadoc -d docs/api -sourcepath src -subpackages engine:model:src Main
 
     - name: Verify Build
       run: |

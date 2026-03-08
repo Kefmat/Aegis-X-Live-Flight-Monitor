@@ -52,19 +52,45 @@ public class TelemetryReceiver {
 
     /**
      * Intern prosessering av mottatte data og sjekk mot grenseverdier.
+     * Inkluderer nå et dynamisk dashbord som oppdateres i terminalen.
      * * @param data Telemetridataene som skal valideres.
      */
     private void processData(TelemetryData data) {
-        System.out.println("[LIVE] " + data.toString());
-    
+        // Rens terminalen for en dynamisk visning
+        System.out.print("\033[H\033[2J");  
+        System.out.flush();
+
+        String status = "NOMINAL";
+        String speedAlert = "[ OK ]";
+        String tempAlert = "[ OK ]";
+
+        // Validering mot grenseverdier
         if (data.speed < config.minSpeed) {
-            System.out.println(">>> ALERT: Hastighet under krav!");
+            status = "ALERT";
+            speedAlert = String.format("[ VIOLATION: < %.1f ]", config.minSpeed);
             logger.logViolation("REQ-NAV-01", data.speed, config.minSpeed);
         }
+        
         if (data.temperature > config.maxTemp) {
-            System.out.println(">>> ALERT: Temperatur over krav!");
+            status = "ALERT";
+            tempAlert = String.format("[ VIOLATION: > %.1f ]", config.maxTemp);
             logger.logViolation("REQ-THERM-01", data.temperature, config.maxTemp);
         }
+
+        // Tegner Dashbordet
+        System.out.println("============================================================");
+        System.out.println("           AEGIS-X MISSION CONTROL DASHBOARD                ");
+        System.out.println("============================================================");
+        System.out.println(" STATUS: [ " + status + " ]          PORT: " + port);
+        System.out.println("------------------------------------------------------------");
+        System.out.println(" TELEMETRY DATA:");
+        System.out.printf("   SPEED:   %.2f km/t  %s\n", data.speed, speedAlert);
+        System.out.printf("   ALT:     %.2f m     [ NOMINAL ]\n", data.altitude);
+        System.out.printf("   TEMP:    %.2f °C    %s\n", data.temperature, tempAlert);
+        System.out.println("------------------------------------------------------------");
+        System.out.println(" LOGGING: Active (logs/ncr_report.csv)");
+        System.out.println("============================================================");
+        System.out.println(" (Press Ctrl+C to abort mission)");
     }
     
     /**

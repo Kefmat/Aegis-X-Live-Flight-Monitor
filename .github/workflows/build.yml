@@ -22,7 +22,7 @@ jobs:
     - name: Compile Aegis-X
       run: |
         mkdir -p bin
-        javac -d bin src/model/TelemetryData.java src/engine/Parser.java src/engine/ConfigLoader.java src/engine/TelemetryReceiver.java src/sim/MissileSimulator.java src/Main.java
+        javac -d bin src/model/TelemetryData.java src/engine/Parser.java src/engine/ConfigLoader.java src/engine/LogManager.java src/engine/TelemetryReceiver.java src/sim/MissileSimulator.java src/Main.java
 
     - name: Generate Javadoc
       run: |

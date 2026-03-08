@@ -1,5 +1,6 @@
 import java.io.File;
 import engine.ConfigLoader;
+import engine.LogManager;
 import engine.Parser;
 import engine.TelemetryReceiver;
 import model.TelemetryData;
@@ -32,6 +33,10 @@ public class Main {
         config.loadConfig("data/system_reqs.xml");
         System.out.println("[CONFIG] Krav-database OK.");
 
+        // Initialiserer NCR-logging (Non-Conformance Reports)
+        LogManager logger = new LogManager("logs/ncr_report.csv");
+        System.out.println("[LOG] NCR-rapportering aktiv: logs/ncr_report.csv");
+
         // Simulering av Live-data 
         // Simulerer en pakke som kommer inn via nettverket
         String mockIncoming = "SPD:1750.5;ALT:15000.0;TEMP:42.5";
@@ -51,6 +56,9 @@ public class Main {
                 System.out.println("   Krav: " + config.minSpeed + " km/t");
                 System.out.println("   ACTION: Triggering Flight Termination? NO (Dev Mode)");
                 System.out.println("----------------------------------------");
+                
+                // Logger avviket til NCR-filen
+                logger.logViolation("REQ-NAV-01", currentFlight.speed, config.minSpeed);
             } else {
                 System.out.println("[STATUS] All systems within nominal parameters.");
             }
@@ -60,7 +68,7 @@ public class Main {
         
         // Starter den faktiske nettverksmotoren
         // Mottar port og konfigurasjonsobjekt for sanntidsovervaking
-        TelemetryReceiver receiver = new TelemetryReceiver(5000, config);
+        TelemetryReceiver receiver = new TelemetryReceiver(5000, config, logger);
         receiver.start();
     }
 }

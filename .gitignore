@@ -6,3 +6,12 @@ docs/api/
 
 # IDE-spesifikke filer
 .vscode/
+*.swp
+.DS_Store
+
+# Prosjekt-spesifikke logger
+logs/*.csv
+
+# Midlertidige filer
+*.log
+*.tmp

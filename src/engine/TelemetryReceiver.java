@@ -12,15 +12,17 @@ public class TelemetryReceiver {
     private int port;
     private boolean running;
     private ConfigLoader config;
+    private LogManager logger;
 
     /**
      * Oppretter en ny mottaker for telemetri.
      * * @param port Nettverksporten det skal lyttes på.
      * @param config Konfigurasjonsobjektet som inneholder grenseverdier.
      */
-    public TelemetryReceiver(int port, ConfigLoader config) {
+    public TelemetryReceiver(int port, ConfigLoader config, LogManager logger) {
         this.port = port;
         this.config = config;
+        this.logger = logger;
     }
 
     /**
@@ -54,15 +56,17 @@ public class TelemetryReceiver {
      */
     private void processData(TelemetryData data) {
         System.out.println("[LIVE] " + data.toString());
-        
+    
         if (data.speed < config.minSpeed) {
-            System.out.println(">>> ALERT: Hastighet under krav (" + config.minSpeed + " km/t)!");
+            System.out.println(">>> ALERT: Hastighet under krav!");
+            logger.logViolation("REQ-NAV-01", data.speed, config.minSpeed);
         }
         if (data.temperature > config.maxTemp) {
-            System.out.println(">>> ALERT: Temperatur over krav (" + config.maxTemp + " C)!");
+            System.out.println(">>> ALERT: Temperatur over krav!");
+            logger.logViolation("REQ-THERM-01", data.temperature, config.maxTemp);
         }
     }
-
+    
     /**
      * Stopper nettverksmottaket.
      */

@@ -3,10 +3,11 @@ package engine;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import model.TelemetryData;
+import model.FlightPhase;
 
 /**
  * Håndterer nettverkskommunikasjon via UDP.
- * Lytter etter innkommende telemetripakker og validerer dem mot systemkrav.
+ * Lytter etter innkommende telemetripakker og validerer dem mot systemkrav basert på flyfase.
  */
 public class TelemetryReceiver {
     private int port;
@@ -16,8 +17,9 @@ public class TelemetryReceiver {
 
     /**
      * Oppretter en ny mottaker for telemetri.
-     * * @param port Nettverksporten det skal lyttes på.
+     * @param port Nettverksporten det skal lyttes på.
      * @param config Konfigurasjonsobjektet som inneholder grenseverdier.
+     * @param logger Logghåndterer for avviksrapportering.
      */
     public TelemetryReceiver(int port, ConfigLoader config, LogManager logger) {
         this.port = port;
@@ -52,8 +54,8 @@ public class TelemetryReceiver {
 
     /**
      * Intern prosessering av mottatte data og sjekk mot grenseverdier.
-     * Inkluderer nå et dynamisk dashbord som oppdateres i terminalen.
-     * * @param data Telemetridataene som skal valideres.
+     * Inkluderer nå fase-spesifikk logikk og et dynamisk dashbord.
+     * @param data Telemetridataene som skal valideres.
      */
     private void processData(TelemetryData data) {
         // Rens terminalen for en dynamisk visning
@@ -63,8 +65,9 @@ public class TelemetryReceiver {
         String status = "NOMINAL";
         String speedAlert = "[ OK ]";
         String tempAlert = "[ OK ]";
+        String phaseAlert = "[ OK ]";
 
-        // Validering mot grenseverdier
+        // Generell validering (hastighet og temperatur)
         if (data.speed < config.minSpeed) {
             status = "ALERT";
             speedAlert = String.format("[ VIOLATION: < %.1f ]", config.minSpeed);
@@ -77,25 +80,32 @@ public class TelemetryReceiver {
             logger.logViolation("REQ-THERM-01", data.temperature, config.maxTemp);
         }
 
+        // Fase-spesifikk logikk: Sjekker om missilet beveger seg før start
+        if (data.phase == FlightPhase.PRE_LAUNCH && data.speed > 1.0) {
+            status = "ALERT";
+            phaseAlert = "[ ILLEGAL MOVEMENT ]";
+            logger.logViolation("REQ-SAFE-01", data.speed, 1.0);
+        }
+
         // Tegner Dashbordet
         System.out.println("============================================================");
         System.out.println("           AEGIS-X MISSION CONTROL DASHBOARD                ");
         System.out.println("============================================================");
-        System.out.println(" STATUS: [ " + status + " ]          PORT: " + port);
+        System.out.println(" STATUS: [ " + status + " ]          PHASE: [ " + data.phase + " ]");
         System.out.println("------------------------------------------------------------");
         System.out.println(" TELEMETRY DATA:");
         System.out.printf("   SPEED:   %.2f km/t  %s\n", data.speed, speedAlert);
         System.out.printf("   ALT:     %.2f m     [ NOMINAL ]\n", data.altitude);
         System.out.printf("   TEMP:    %.2f °C    %s\n", data.temperature, tempAlert);
+        if (!phaseAlert.equals("[ OK ]")) {
+            System.out.println("   PHASE ERR: " + phaseAlert);
+        }
         System.out.println("------------------------------------------------------------");
         System.out.println(" LOGGING: Active (logs/ncr_report.csv)");
         System.out.println("============================================================");
         System.out.println(" (Press Ctrl+C to abort mission)");
     }
     
-    /**
-     * Stopper nettverksmottaket.
-     */
     public void stop() {
         this.running = false;
     }

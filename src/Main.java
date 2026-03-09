@@ -2,6 +2,7 @@ import java.io.File;
 import engine.ConfigLoader;
 import engine.LogManager;
 import engine.Parser;
+import engine.ReportGenerator;
 import engine.TelemetryReceiver;
 import model.TelemetryData;
 
@@ -13,7 +14,7 @@ public class Main {
 
     /**
      * Applikasjonens startpunkt som koordinerer systemoppstart og datamottak.
-     * * @param args Kommandolinjeargumenter (ikke i bruk).
+     * @param args Kommandolinjeargumenter (ikke i bruk).
      */
     public static void main(String[] args) {
         System.out.println("========================================");
@@ -37,9 +38,15 @@ public class Main {
         LogManager logger = new LogManager("logs/ncr_report.csv");
         System.out.println("[LOG] NCR-rapportering aktiv: logs/ncr_report.csv");
 
+        // Legger til Shutdown Hook for automatisk generering av misjonsrapport ved avslutning
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("\n[SYSTEM] Avslutter... Genererer misjonsrapport.");
+            ReportGenerator.generateMarkdownReport("logs/ncr_report.csv", "logs/mission_summary.md");
+        }));
+
         // Simulering av Live-data 
-        // Simulerer en pakke som kommer inn via nettverket
-        String mockIncoming = "SPD:1750.5;ALT:15000.0;TEMP:42.5";
+        // Simulerer en pakke som kommer inn via nettverket (Oppdatert med PHS-tag)
+        String mockIncoming = "PHS:PRE_LAUNCH;SPD:1750.5;ALT:15000.0;TEMP:42.5";
         System.out.println("[NETWORK] Mottatt radata: " + mockIncoming);
 
         // Prosessering og Validering

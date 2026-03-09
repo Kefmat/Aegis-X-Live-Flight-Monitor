@@ -33,6 +33,7 @@ jobs:
         src/engine/LogManager.java \
         src/engine/ConfigLoader.java \
         src/engine/Parser.java \
+        src/engine/ReportGenerator.java \
         src/engine/TelemetryReceiver.java \
         src/sim/MissileSimulator.java \
         src/Main.java

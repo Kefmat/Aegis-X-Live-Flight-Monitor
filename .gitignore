@@ -1,5 +1,6 @@
 # Kompilert kode
 bin/
+*.class
 
 # Autogenerert dokumentasjon
 docs/api/
@@ -9,9 +10,13 @@ docs/api/
 *.swp
 .DS_Store
 
-# Prosjekt-spesifikke logger
-logs/*.csv
+# Logger og rapporter (Historikken skal være lokal)
+logs/ncr_report.csv
+logs/mission_summary.md
 
 # Midlertidige filer
 *.log
 *.tmp
+
+# Javadoc
+docs/api/

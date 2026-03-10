@@ -10,7 +10,7 @@ import model.FlightPhase;
 /**
  * Håndterer nettverkskommunikasjon via UDP i en egen tråd.
  * Lytter etter innkommende telemetripakker og validerer dem mot systemkrav basert på flyfase.
- * Inkluderer nå Flight Termination System (FTS) for toveis-kommunikasjon.
+ * Inkluderer nå Flight Termination System (FTS) og Network Health Monitor (Heartbeat).
  */
 public class TelemetryReceiver implements Runnable {
     private int port;
@@ -22,6 +22,10 @@ public class TelemetryReceiver implements Runnable {
     private int violationCount = 0;
     private final int MAX_VIOLATIONS = 5;
     private boolean ftsTriggered = false;
+
+    // Heartbeat/Link-variabler
+    private long lastPacketTime = 0;
+    private final long LINK_TIMEOUT = 3000; // 3 sekunder før link anses som tapt
 
     /**
      * Oppretter en ny mottaker for telemetri.
@@ -39,8 +43,8 @@ public class TelemetryReceiver implements Runnable {
     public void run() {
         this.running = true;
         try (DatagramSocket socket = new DatagramSocket(port)) {
-            // Setter timeout slik at socket.receive() ikke blokkerer evig.
-            socket.setSoTimeout(1000); 
+            // Setter timeout lavere (500ms) for raskere oppdagelse av link-brudd
+            socket.setSoTimeout(500); 
             
             System.out.println("[NETWORK] Mottaker-tråd startet på port " + port);
             byte[] buffer = new byte[1024];
@@ -50,15 +54,18 @@ public class TelemetryReceiver implements Runnable {
                     DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                     socket.receive(packet);
 
+                    // Oppdaterer heartbeat ved mottatt pakke
+                    lastPacketTime = System.currentTimeMillis();
+
                     String received = new String(packet.getData(), 0, packet.getLength());
                     TelemetryData data = Parser.parseRawString(received);
                     
                     if (data != null) {
-                        // Sender med adresse og port for å kunne svare (FTS)
                         processData(data, socket, packet.getAddress(), packet.getPort());
                     }
                 } catch (SocketTimeoutException e) {
-                    // Timeout sjekk for trådhåndtering
+                    // Hvis ingen pakke mottas, sjekker vi om link-timeout er nådd
+                    checkLinkStatus();
                 }
             }
         } catch (Exception e) {
@@ -68,13 +75,18 @@ public class TelemetryReceiver implements Runnable {
     }
 
     /**
+     * Sjekker om det har gått for lang tid siden forrige pakke.
+     */
+    private void checkLinkStatus() {
+        if (lastPacketTime > 0 && (System.currentTimeMillis() - lastPacketTime) > LINK_TIMEOUT) {
+            renderLostLinkDashboard();
+        }
+    }
+
+    /**
      * Intern prosessering av mottatte data og sjekk mot grenseverdier.
-     * Inkluderer nå FTS-logikk og toveis-sending av terminering-kommando.
      */
     private void processData(TelemetryData data, DatagramSocket socket, InetAddress remoteAddr, int remotePort) {
-        System.out.print("\033[H\033[2J");  
-        System.out.flush();
-
         String status = "NOMINAL";
         String speedAlert = "[ OK ]";
         String tempAlert = "[ OK ]";
@@ -124,10 +136,19 @@ public class TelemetryReceiver implements Runnable {
         }
     }
 
+    /**
+     * Viser dashbordet når vi har aktiv dataflyt.
+     */
     private void renderDashboard(TelemetryData data, String status, String spd, String tmp, String phs) {
+        System.out.print("\033[H\033[2J");  
+        System.out.flush();
+
+        long latency = System.currentTimeMillis() - lastPacketTime;
+
         System.out.println("============================================================");
         System.out.println("           AEGIS-X MISSION CONTROL DASHBOARD                ");
         System.out.println("============================================================");
+        System.out.println(" LINK: [ STABLE (" + latency + "ms) ]        FTS: [ " + (ftsTriggered ? "ABORTED" : "ACTIVE") + " ]");
         System.out.println(" STATUS: [ " + (ftsTriggered ? "ABORTED" : status) + " ]          PHASE: [ " + data.phase + " ]");
         System.out.println(" FTS COUNTER: " + violationCount + " / " + MAX_VIOLATIONS);
         System.out.println("------------------------------------------------------------");
@@ -140,9 +161,28 @@ public class TelemetryReceiver implements Runnable {
         System.out.println("============================================================");
         System.out.print("> ");
     }
+
+    /**
+     * Viser et kritisk varsel hvis forbindelsen til missilet brytes.
+     */
+    private void renderLostLinkDashboard() {
+        System.out.print("\033[H\033[2J");
+        System.out.flush();
+        System.out.println("============================================================");
+        System.out.println("           AEGIS-X MISSION CONTROL DASHBOARD                ");
+        System.out.println("============================================================");
+        System.out.println(" STATUS: [ !!! LOST LINK !!! ]      PHASE: [ UNKNOWN ]");
+        System.out.println(" WARNING: Ingen telemetri mottatt på > " + (LINK_TIMEOUT/1000) + "s");
+        System.out.println("------------------------------------------------------------");
+        System.out.println(" HANDLING: Sjekk missil-sender eller nettverkstilkobling.");
+        System.out.println("------------------------------------------------------------");
+        System.out.println(" COMMANDS: 'stop', 'status', 'abort', 'reload'");
+        System.out.println("============================================================");
+        System.out.print("> ");
+    }
     
     public void triggerManualAbort() {
-        this.violationCount = MAX_VIOLATIONS; // Vil trigge sendTermination ved neste pakke
+        this.violationCount = MAX_VIOLATIONS; 
     }
 
     public void stop() { this.running = false; }

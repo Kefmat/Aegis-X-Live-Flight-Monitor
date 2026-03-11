@@ -10,11 +10,13 @@ docs/api/
 *.swp
 .DS_Store
 
-# Logger og rapporter (Historikken skal være lokal)
-logs/ncr_report.csv
+# Logger, rapporter og Black Box-data (Historikken skal være lokal)
+logs/*.csv
+logs/*.jsonl
+logs/*.md
 logs/mission_summary.md
 
-# Midlertidige filer
+# Midlertidige filer og rålogger
 *.log
 *.tmp
 

@@ -9,14 +9,15 @@ import model.FlightPhase;
 
 /**
  * Håndterer nettverkskommunikasjon via UDP i en egen tråd.
- * Lytter etter innkommende telemetripakker og validerer dem mot systemkrav basert på flyfase.
- * Inkluderer nå Flight Termination System (FTS) og Network Health Monitor (Heartbeat).
+ * Lytter etter innkommende telemetripakker og validerer dem mot systemkrav.
+ * Inkluderer FTS, Network Health Monitor og Black Box-opptak.
  */
 public class TelemetryReceiver implements Runnable {
     private int port;
     private volatile boolean running; 
     private ConfigLoader config;
     private LogManager logger;
+    private BlackBoxProvider blackBox; // Ny provider for rådata-lagring
     
     // FTS-variabler
     private int violationCount = 0;
@@ -25,25 +26,26 @@ public class TelemetryReceiver implements Runnable {
 
     // Heartbeat/Link-variabler
     private long lastPacketTime = 0;
-    private final long LINK_TIMEOUT = 3000; // 3 sekunder før link anses som tapt
+    private final long LINK_TIMEOUT = 3000; 
 
     /**
-     * Oppretter en ny mottaker for telemetri.
+     * Oppretter en ny mottaker for telemetri med Black Box-støtte.
      * @param port Nettverksporten det skal lyttes på.
      * @param config Konfigurasjonsobjektet som inneholder grenseverdier.
      * @param logger Logghåndterer for avviksrapportering.
+     * @param blackBox Opptaksmekanisme for alle flydata.
      */
-    public TelemetryReceiver(int port, ConfigLoader config, LogManager logger) {
+    public TelemetryReceiver(int port, ConfigLoader config, LogManager logger, BlackBoxProvider blackBox) {
         this.port = port;
         this.config = config;
         this.logger = logger;
+        this.blackBox = blackBox;
     }
 
     @Override
     public void run() {
         this.running = true;
         try (DatagramSocket socket = new DatagramSocket(port)) {
-            // Setter timeout lavere (500ms) for raskere oppdagelse av link-brudd
             socket.setSoTimeout(500); 
             
             System.out.println("[NETWORK] Mottaker-tråd startet på port " + port);
@@ -54,17 +56,17 @@ public class TelemetryReceiver implements Runnable {
                     DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                     socket.receive(packet);
 
-                    // Oppdaterer heartbeat ved mottatt pakke
                     lastPacketTime = System.currentTimeMillis();
 
                     String received = new String(packet.getData(), 0, packet.getLength());
                     TelemetryData data = Parser.parseRawString(received);
                     
                     if (data != null) {
+                        // Lagrer data i Black Box umiddelbart etter parsing
+                        blackBox.record(data);
                         processData(data, socket, packet.getAddress(), packet.getPort());
                     }
                 } catch (SocketTimeoutException e) {
-                    // Hvis ingen pakke mottas, sjekker vi om link-timeout er nådd
                     checkLinkStatus();
                 }
             }
@@ -74,18 +76,12 @@ public class TelemetryReceiver implements Runnable {
         System.out.println("[NETWORK] Mottaker-tråd avsluttet.");
     }
 
-    /**
-     * Sjekker om det har gått for lang tid siden forrige pakke.
-     */
     private void checkLinkStatus() {
         if (lastPacketTime > 0 && (System.currentTimeMillis() - lastPacketTime) > LINK_TIMEOUT) {
             renderLostLinkDashboard();
         }
     }
 
-    /**
-     * Intern prosessering av mottatte data og sjekk mot grenseverdier.
-     */
     private void processData(TelemetryData data, DatagramSocket socket, InetAddress remoteAddr, int remotePort) {
         String status = "NOMINAL";
         String speedAlert = "[ OK ]";
@@ -93,7 +89,6 @@ public class TelemetryReceiver implements Runnable {
         String phaseAlert = "[ OK ]";
         boolean currentViolation = false;
 
-        // Validering mot ConfigLoader
         if (data.speed < config.minSpeed) {
             status = "ALERT";
             speedAlert = String.format("[ VIOLATION: < %.1f ]", config.minSpeed);
@@ -112,7 +107,6 @@ public class TelemetryReceiver implements Runnable {
             currentViolation = true;
         }
 
-        // FTS Logikk: Hvis avvik oppdages, øk telleren
         if (currentViolation && !ftsTriggered) {
             violationCount++;
             logger.logViolation("FTS-AUTO-CHECK", data.speed, config.minSpeed);
@@ -136,9 +130,6 @@ public class TelemetryReceiver implements Runnable {
         }
     }
 
-    /**
-     * Viser dashbordet når vi har aktiv dataflyt.
-     */
     private void renderDashboard(TelemetryData data, String status, String spd, String tmp, String phs) {
         System.out.print("\033[H\033[2J");  
         System.out.flush();
@@ -150,7 +141,7 @@ public class TelemetryReceiver implements Runnable {
         System.out.println("============================================================");
         System.out.println(" LINK: [ STABLE (" + latency + "ms) ]        FTS: [ " + (ftsTriggered ? "ABORTED" : "ACTIVE") + " ]");
         System.out.println(" STATUS: [ " + (ftsTriggered ? "ABORTED" : status) + " ]          PHASE: [ " + data.phase + " ]");
-        System.out.println(" FTS COUNTER: " + violationCount + " / " + MAX_VIOLATIONS);
+        System.out.println(" RECORDING: [ ACTIVE ] -> logs/flight_data.jsonl");
         System.out.println("------------------------------------------------------------");
         System.out.printf("   SPEED:   %.2f km/t  %s\n", data.speed, spd);
         System.out.printf("   ALT:     %.2f m     [ NOMINAL ]\n", data.altitude);
@@ -162,9 +153,6 @@ public class TelemetryReceiver implements Runnable {
         System.out.print("> ");
     }
 
-    /**
-     * Viser et kritisk varsel hvis forbindelsen til missilet brytes.
-     */
     private void renderLostLinkDashboard() {
         System.out.print("\033[H\033[2J");
         System.out.flush();
@@ -173,6 +161,7 @@ public class TelemetryReceiver implements Runnable {
         System.out.println("============================================================");
         System.out.println(" STATUS: [ !!! LOST LINK !!! ]      PHASE: [ UNKNOWN ]");
         System.out.println(" WARNING: Ingen telemetri mottatt på > " + (LINK_TIMEOUT/1000) + "s");
+        System.out.println(" BLACK BOX: Recording paused.");
         System.out.println("------------------------------------------------------------");
         System.out.println(" HANDLING: Sjekk missil-sender eller nettverkstilkobling.");
         System.out.println("------------------------------------------------------------");

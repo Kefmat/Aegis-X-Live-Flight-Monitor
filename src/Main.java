@@ -24,6 +24,9 @@ public class Main {
         ConfigLoader config = new ConfigLoader();
         config.loadConfig("data/system_reqs.xml");
         LogManager logger = new LogManager("logs/ncr_report.csv");
+        
+        // Initialiserer Black Box for rådata-opptak
+        BlackBoxProvider blackBox = new BlackBoxProvider("logs/flight_data.jsonl");
 
         // Shutdown Hook for automatisk generering av misjonsrapport ved avslutning
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -31,8 +34,8 @@ public class Main {
             ReportGenerator.generateMarkdownReport("logs/ncr_report.csv", "logs/mission_summary.md");
         }));
 
-        // Starter mottakeren i en egen tråd
-        TelemetryReceiver receiver = new TelemetryReceiver(5000, config, logger);
+        // Starter mottakeren i en egen tråd - nå med Black Box støtte
+        TelemetryReceiver receiver = new TelemetryReceiver(5000, config, logger, blackBox);
         Thread networkThread = new Thread(receiver);
         networkThread.start();
 

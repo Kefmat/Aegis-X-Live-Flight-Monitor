@@ -27,6 +27,7 @@ jobs:
 
     - name: Compile Aegis-X
       run: |
+        mkdir -p bin
         javac -d bin \
         src/model/FlightPhase.java \
         src/model/TelemetryData.java \
@@ -34,6 +35,7 @@ jobs:
         src/engine/ConfigLoader.java \
         src/engine/Parser.java \
         src/engine/ReportGenerator.java \
+        src/engine/BlackBoxProvider.java \
         src/engine/TelemetryReceiver.java \
         src/sim/MissileSimulator.java \
         src/Main.java

@@ -61,8 +61,15 @@ public class Main {
                 case "abort":
                     receiver.triggerManualAbort();
                     break;
+                case "analyze":
+                    System.out.println("[SYSTEM] Initialiserer Post-Mission Analysis...");
+                    FlightAnalyzer.analyze("logs/flight_data.jsonl");
+                    break;
                 case "help":
-                    System.out.println("Kommandoer: stop, status, reload, abort");
+                    System.out.println("Kommandoer: stop, status, reload, abort, analyze");
+                    break;
+                default:
+                    System.out.println("[SYSTEM] Ukjent kommando. Skriv 'help' for oversikt.");
                     break;
             }
         }

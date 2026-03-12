@@ -34,7 +34,7 @@ public class Main {
             ReportGenerator.generateMarkdownReport("logs/ncr_report.csv", "logs/mission_summary.md");
         }));
 
-        // Starter mottakeren i en egen tråd - nå med Black Box støtte
+        // Starter mottakeren i en egen tråd - nå med Black Box og Remote Control støtte
         TelemetryReceiver receiver = new TelemetryReceiver(5000, config, logger, blackBox);
         Thread networkThread = new Thread(receiver);
         networkThread.start();
@@ -44,7 +44,23 @@ public class Main {
         boolean active = true;
 
         while (active) {
-            String command = scanner.nextLine().trim().toLowerCase();
+            String input = scanner.nextLine().trim();
+            String command = input.toLowerCase();
+
+            // Håndterer kommandoer med argumenter (som set-throttle)
+            if (command.startsWith("set-throttle")) {
+                try {
+                    String[] parts = input.split(" ");
+                    if (parts.length > 1) {
+                        receiver.sendRemoteCommand("THROTTLE", parts[1]);
+                    } else {
+                        System.out.println("[USAGE] set-throttle <verdi>");
+                    }
+                } catch (Exception e) {
+                    System.out.println("[ERROR] Ugyldig throttle-format.");
+                }
+                continue;
+            }
 
             switch (command) {
                 case "stop":
@@ -66,7 +82,9 @@ public class Main {
                     FlightAnalyzer.analyze("logs/flight_data.jsonl");
                     break;
                 case "help":
-                    System.out.println("Kommandoer: stop, status, reload, abort, analyze");
+                    System.out.println("Kommandoer: stop, status, reload, abort, analyze, set-throttle <verdi>");
+                    break;
+                case "":
                     break;
                 default:
                     System.out.println("[SYSTEM] Ukjent kommando. Skriv 'help' for oversikt.");

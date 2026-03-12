@@ -4,13 +4,15 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketTimeoutException;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import model.TelemetryData;
 import model.FlightPhase;
 
 /**
  * Håndterer nettverkskommunikasjon via UDP i en egen tråd.
  * Lytter etter innkommende telemetripakker og validerer dem mot systemkrav.
- * Inkluderer FTS, Network Health Monitor og Black Box-opptak.
+ * Inkluderer FTS, Network Health Monitor, Black Box-opptak og Remote Command-støtte.
  */
 public class TelemetryReceiver implements Runnable {
     private int port;
@@ -27,6 +29,10 @@ public class TelemetryReceiver implements Runnable {
     // Heartbeat/Link-variabler
     private long lastPacketTime = 0;
     private final long LINK_TIMEOUT = 3000; 
+
+    // Visualisering - Lagrer de siste 20 hastighetsmålingene for grafen
+    private Deque<Double> speedHistory = new ArrayDeque<>();
+    private final int MAX_HISTORY = 20;
 
     /**
      * Oppretter en ny mottaker for telemetri med Black Box-støtte.
@@ -64,6 +70,10 @@ public class TelemetryReceiver implements Runnable {
                     if (data != null) {
                         // Lagrer data i Black Box umiddelbart etter parsing
                         blackBox.record(data);
+                        
+                        // Oppdaterer historikk for graf
+                        updateHistory(data.speed);
+                        
                         processData(data, socket, packet.getAddress(), packet.getPort());
                     }
                 } catch (SocketTimeoutException e) {
@@ -74,6 +84,34 @@ public class TelemetryReceiver implements Runnable {
             System.err.println("[NETWORK ERROR] " + e.getMessage());
         }
         System.out.println("[NETWORK] Mottaker-tråd avsluttet.");
+    }
+
+    /**
+     * Legger til ny fart i historikken og fjerner de eldste hvis køen er full.
+     */
+    private void updateHistory(double speed) {
+        if (speedHistory.size() >= MAX_HISTORY) {
+            speedHistory.pollFirst();
+        }
+        speedHistory.addLast(speed);
+    }
+
+    /**
+     * Sender en fjernkommando tilbake til simulatoren (f.eks. THROTTLE).
+     */
+    public void sendRemoteCommand(String cmdType, String value) {
+        try (DatagramSocket socket = new DatagramSocket()) {
+            InetAddress address = InetAddress.getByName("localhost");
+            String fullCmd = "CMD:" + cmdType.toUpperCase() + ":" + value;
+            byte[] buf = fullCmd.getBytes();
+            
+            // Simulatoren lytter på samme port som den sender fra
+            DatagramPacket packet = new DatagramPacket(buf, buf.length, address, 5001); 
+            socket.send(packet);
+            System.out.println("\n[COMMAND SENT] " + fullCmd);
+        } catch (Exception e) {
+            System.err.println("[REMOTE ERROR] Kunne ikke sende kommando: " + e.getMessage());
+        }
     }
 
     private void checkLinkStatus() {
@@ -143,14 +181,32 @@ public class TelemetryReceiver implements Runnable {
         System.out.println(" STATUS: [ " + (ftsTriggered ? "ABORTED" : status) + " ]          PHASE: [ " + data.phase + " ]");
         System.out.println(" RECORDING: [ ACTIVE ] -> logs/flight_data.jsonl");
         System.out.println("------------------------------------------------------------");
+        
+        // Render enkel ASCII Trend Graph
+        renderTrendGraph();
+        
+        System.out.println("------------------------------------------------------------");
         System.out.printf("   SPEED:   %.2f km/t  %s\n", data.speed, spd);
         System.out.printf("   ALT:     %.2f m     [ NOMINAL ]\n", data.altitude);
         System.out.printf("   TEMP:    %.2f °C    %s\n", data.temperature, tmp);
         if (!phs.equals("[ OK ]")) System.out.println("   PHASE ERR: " + phs);
         System.out.println("------------------------------------------------------------");
-        System.out.println(" COMMANDS: 'stop', 'status', 'abort', 'reload'");
+        System.out.println(" COMMANDS: 'stop', 'status', 'abort', 'reload', 'set-throttle'");
         System.out.println("============================================================");
         System.out.print("> ");
+    }
+
+    /**
+     * Tegner en horisontal ASCII-graf basert på farten.
+     */
+    private void renderTrendGraph() {
+        System.out.print(" SPEED TREND: ");
+        for (Double s : speedHistory) {
+            if (s > 2000) System.out.print("▲");
+            else if (s > 1000) System.out.print("■");
+            else System.out.print("·");
+        }
+        System.out.println();
     }
 
     private void renderLostLinkDashboard() {

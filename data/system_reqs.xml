@@ -1,5 +1,4 @@
-﻿$xmlContent = @"
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <REQUIREMENT-SET PROJECT="Aegis-X">
     <ITEM ID="REQ-NAV-01">
         <TEXT>Minimumshastighet: 1800 km/t.</TEXT>
@@ -13,6 +12,9 @@
         <TEXT>Maksimal sensortemperatur: 85 grader Celsius.</TEXT>
         <MAX_TEMP>85</MAX_TEMP>
     </ITEM>
+    <ITEM ID="REQ-NAV-03">
+        <TEXT>Geofence: Maksimalt avvik fra senterlinje X/Y: 5000 meter.</TEXT>
+        <MAX_X>5000</MAX_X>
+        <MAX_Y>5000</MAX_Y>
+    </ITEM>
 </REQUIREMENT-SET>
-"@
-$xmlContent | Out-File -FilePath "data/system_reqs.xml" -Encoding utf8

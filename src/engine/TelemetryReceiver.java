@@ -11,7 +11,7 @@ import model.FlightPhase;
 
 /**
  * Håndterer nettverkskommunikasjon via UDP i en egen tråd.
- * Lytter etter innkommende telemetripakker og validerer dem mot systemkrav.
+ * Lytter etter innkommende telemetripakker og validerer dem mot systemkrav (inkl. Geofence).
  * Inkluderer FTS, Network Health Monitor, Black Box-opptak og Remote Command-støtte.
  */
 public class TelemetryReceiver implements Runnable {
@@ -19,7 +19,7 @@ public class TelemetryReceiver implements Runnable {
     private volatile boolean running; 
     private ConfigLoader config;
     private LogManager logger;
-    private BlackBoxProvider blackBox; // Ny provider for rådata-lagring
+    private BlackBoxProvider blackBox;
     
     // FTS-variabler
     private int violationCount = 0;
@@ -68,12 +68,8 @@ public class TelemetryReceiver implements Runnable {
                     TelemetryData data = Parser.parseRawString(received);
                     
                     if (data != null) {
-                        // Lagrer data i Black Box umiddelbart etter parsing
                         blackBox.record(data);
-                        
-                        // Oppdaterer historikk for graf
                         updateHistory(data.speed);
-                        
                         processData(data, socket, packet.getAddress(), packet.getPort());
                     }
                 } catch (SocketTimeoutException e) {
@@ -86,9 +82,6 @@ public class TelemetryReceiver implements Runnable {
         System.out.println("[NETWORK] Mottaker-tråd avsluttet.");
     }
 
-    /**
-     * Legger til ny fart i historikken og fjerner de eldste hvis køen er full.
-     */
     private void updateHistory(double speed) {
         if (speedHistory.size() >= MAX_HISTORY) {
             speedHistory.pollFirst();
@@ -96,19 +89,14 @@ public class TelemetryReceiver implements Runnable {
         speedHistory.addLast(speed);
     }
 
-    /**
-     * Sender en fjernkommando tilbake til simulatoren (f.eks. THROTTLE).
-     */
     public void sendRemoteCommand(String cmdType, String value) {
         try (DatagramSocket socket = new DatagramSocket()) {
             InetAddress address = InetAddress.getByName("localhost");
             String fullCmd = "CMD:" + cmdType.toUpperCase() + ":" + value;
             byte[] buf = fullCmd.getBytes();
             
-            // Simulatoren lytter på samme port som den sender fra
             DatagramPacket packet = new DatagramPacket(buf, buf.length, address, 5001); 
             socket.send(packet);
-            System.out.println("\n[COMMAND SENT] " + fullCmd);
         } catch (Exception e) {
             System.err.println("[REMOTE ERROR] Kunne ikke sende kommando: " + e.getMessage());
         }
@@ -124,37 +112,40 @@ public class TelemetryReceiver implements Runnable {
         String status = "NOMINAL";
         String speedAlert = "[ OK ]";
         String tempAlert = "[ OK ]";
-        String phaseAlert = "[ OK ]";
+        String altAlert = "[ OK ]";
+        String geoAlert = "[ OK ]";
         boolean currentViolation = false;
 
+        // Validering mot XML-krav
         if (data.speed < config.minSpeed) {
-            status = "ALERT";
-            speedAlert = String.format("[ VIOLATION: < %.1f ]", config.minSpeed);
+            speedAlert = "[ LOW SPEED ]";
             currentViolation = true;
         }
-        
         if (data.temperature > config.maxTemp) {
-            status = "ALERT";
-            tempAlert = String.format("[ VIOLATION: > %.1f ]", config.maxTemp);
+            tempAlert = "[ OVERHEAT ]";
             currentViolation = true;
         }
-
-        if (data.phase == FlightPhase.PRE_LAUNCH && data.speed > 1.0) {
-            status = "ALERT";
-            phaseAlert = "[ ILLEGAL MOVEMENT ]";
+        if (data.altitude > config.maxAltitude) {
+            altAlert = "[ CEILING BREACH ]";
+            currentViolation = true;
+        }
+        // Geofencing sjekk
+        if (Math.abs(data.x) > config.maxX || Math.abs(data.y) > config.maxY) {
+            geoAlert = "[ GEOFENCE BREACH ]";
             currentViolation = true;
         }
 
         if (currentViolation && !ftsTriggered) {
             violationCount++;
-            logger.logViolation("FTS-AUTO-CHECK", data.speed, config.minSpeed);
-            
             if (violationCount >= MAX_VIOLATIONS) {
                 sendTermination(socket, remoteAddr, remotePort);
+                status = "TERMINATING";
+            } else {
+                status = "ALERT";
             }
         }
 
-        renderDashboard(data, status, speedAlert, tempAlert, phaseAlert);
+        renderDashboard(data, status, speedAlert, tempAlert, altAlert, geoAlert);
     }
 
     private void sendTermination(DatagramSocket socket, InetAddress addr, int port) {
@@ -164,11 +155,11 @@ public class TelemetryReceiver implements Runnable {
             socket.send(new DatagramPacket(buf, buf.length, addr, port));
             ftsTriggered = true;
         } catch (Exception e) {
-            System.err.println("[FTS ERROR] Kunne ikke sende kommando: " + e.getMessage());
+            System.err.println("[FTS ERROR] " + e.getMessage());
         }
     }
 
-    private void renderDashboard(TelemetryData data, String status, String spd, String tmp, String phs) {
+    private void renderDashboard(TelemetryData data, String status, String spd, String tmp, String alt, String geo) {
         System.out.print("\033[H\033[2J");  
         System.out.flush();
 
@@ -177,28 +168,23 @@ public class TelemetryReceiver implements Runnable {
         System.out.println("============================================================");
         System.out.println("           AEGIS-X MISSION CONTROL DASHBOARD                ");
         System.out.println("============================================================");
-        System.out.println(" LINK: [ STABLE (" + latency + "ms) ]        FTS: [ " + (ftsTriggered ? "ABORTED" : "ACTIVE") + " ]");
-        System.out.println(" STATUS: [ " + (ftsTriggered ? "ABORTED" : status) + " ]          PHASE: [ " + data.phase + " ]");
-        System.out.println(" RECORDING: [ ACTIVE ] -> logs/flight_data.jsonl");
+        System.out.println(" LINK: [ " + latency + "ms ]    FTS: [ " + (ftsTriggered ? "ABORTED" : "ACTIVE") + " ]    STATUS: [ " + status + " ]");
         System.out.println("------------------------------------------------------------");
         
-        // Render enkel ASCII Trend Graph
         renderTrendGraph();
+        renderRadarDisplay(data.x, data.y);
         
         System.out.println("------------------------------------------------------------");
-        System.out.printf("   SPEED:   %.2f km/t  %s\n", data.speed, spd);
-        System.out.printf("   ALT:     %.2f m     [ NOMINAL ]\n", data.altitude);
-        System.out.printf("   TEMP:    %.2f °C    %s\n", data.temperature, tmp);
-        if (!phs.equals("[ OK ]")) System.out.println("   PHASE ERR: " + phs);
+        System.out.printf("   SPEED:   %-15.2f %s\n", data.speed, spd);
+        System.out.printf("   ALT:     %-15.2f %s\n", data.altitude, alt);
+        System.out.printf("   TEMP:    %-15.2f %s\n", data.temperature, tmp);
+        System.out.printf("   POS:     X:%-7.1f Y:%-7.1f %s\n", data.x, data.y, geo);
         System.out.println("------------------------------------------------------------");
-        System.out.println(" COMMANDS: 'stop', 'status', 'abort', 'reload', 'set-throttle'");
+        System.out.println(" COMMANDS: stop, abort, set-throttle <val>, analyze");
         System.out.println("============================================================");
         System.out.print("> ");
     }
 
-    /**
-     * Tegner en horisontal ASCII-graf basert på farten.
-     */
     private void renderTrendGraph() {
         System.out.print(" SPEED TREND: ");
         for (Double s : speedHistory) {
@@ -209,26 +195,35 @@ public class TelemetryReceiver implements Runnable {
         System.out.println();
     }
 
+    /**
+     * Tegner et enkelt ASCII-radar display som viser missilet (+) i forhold til grensene.
+     */
+    private void renderRadarDisplay(double x, double y) {
+        int range = 10; // Radar radius i karakterer
+        System.out.println(" GEOGRAPHIC MONITOR (Radar):");
+        
+        // Normaliserer posisjonen til radar-skalaen
+        int normX = (int) (x / config.maxX * range);
+        int normY = (int) (y / config.maxY * range);
+
+        for (int i = -5; i <= 5; i++) {
+            System.out.print("   ");
+            for (int j = -15; j <= 15; j++) {
+                if (i == 0 && j == 0) System.out.print("o"); // Launchpad center
+                else if (i == -normY / 2 && j == normX) System.out.print("+"); // Missilet
+                else if (Math.abs(i) == 5 || Math.abs(j) == 15) System.out.print("#"); // Geofence grense
+                else System.out.print(" ");
+            }
+            System.out.println();
+        }
+    }
+
     private void renderLostLinkDashboard() {
-        System.out.print("\033[H\033[2J");
-        System.out.flush();
-        System.out.println("============================================================");
-        System.out.println("           AEGIS-X MISSION CONTROL DASHBOARD                ");
-        System.out.println("============================================================");
-        System.out.println(" STATUS: [ !!! LOST LINK !!! ]      PHASE: [ UNKNOWN ]");
-        System.out.println(" WARNING: Ingen telemetri mottatt på > " + (LINK_TIMEOUT/1000) + "s");
-        System.out.println(" BLACK BOX: Recording paused.");
-        System.out.println("------------------------------------------------------------");
-        System.out.println(" HANDLING: Sjekk missil-sender eller nettverkstilkobling.");
-        System.out.println("------------------------------------------------------------");
-        System.out.println(" COMMANDS: 'stop', 'status', 'abort', 'reload'");
-        System.out.println("============================================================");
+        System.out.print("\033[H\033[2J\033[flush]");
+        System.out.println("!!! LOST LINK !!! CHECK TRANSMITTER");
         System.out.print("> ");
     }
     
-    public void triggerManualAbort() {
-        this.violationCount = MAX_VIOLATIONS; 
-    }
-
+    public void triggerManualAbort() { this.violationCount = MAX_VIOLATIONS; }
     public void stop() { this.running = false; }
 }

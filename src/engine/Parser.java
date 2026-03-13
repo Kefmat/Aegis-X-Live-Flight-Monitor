@@ -5,7 +5,7 @@ import model.FlightPhase;
 
 /**
  * Ansvarlig for å dekode rå-tekst fra UDP-pakker til TelemetryData-objekter.
- * Forventet format: "PHS:BOOST;SPD:1900;ALT:12000;TEMP:45"
+ * Forventet format: "PHS:BOOST;SPD:1900;ALT:12000;TEMP:45;X:150.0;Y:200.0"
  */
 public class Parser {
     
@@ -28,7 +28,16 @@ public class Parser {
             double alt = Double.parseDouble(parts[2].split(":")[1]);
             double temp = Double.parseDouble(parts[3].split(":")[1]);
             
-            return new TelemetryData(spd, alt, temp, phase);
+            // Dekoder de nye koordinatene for Geofencing
+            double x = 0.0;
+            double y = 0.0;
+            if (parts.length >= 6) {
+                x = Double.parseDouble(parts[4].split(":")[1]);
+                y = Double.parseDouble(parts[5].split(":")[1]);
+            }
+            
+            // Returnerer komplett objekt med posisjonsdata
+            return new TelemetryData(phase, spd, alt, temp, x, y);
         } catch (Exception e) {
             System.err.println("[PARSER ERROR] Ugyldig format: " + raw);
             return null;
